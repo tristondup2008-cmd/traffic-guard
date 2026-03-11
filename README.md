@@ -17,6 +17,7 @@
   - [Публичные списки](#публичные-списки)
   - [Примеры использования](#примеры-использования)
   - [Опции](#опции)
+- [Удаление (uninstall)](#удаление-uninstall)
 - [Логирование](#логирование)
   - [Конфигурация](#конфигурация)
   - [Файлы логов](#файлы-логов)
@@ -32,7 +33,7 @@
 
 ### Зачем это нужно?
 
-**TrafficGuard** - это инструмент сетевой безопасности, который защищает ваш сервер от автоматизированного сканирования портов и несанкционированных попыток подключения. 
+**TrafficGuard** - это инструмент сетевой безопасности, который защищает ваш сервер от автоматизированного сканирования портов и несанкционированных попыток подключения.
 
 **Основные проблемы, которые решает:**
 
@@ -122,7 +123,7 @@ sudo traffic-guard full -u file:///tmp/my-blocklist.txt
 
 - ✅ **Блокирует входящие подключения** к вашему серверу с определенных IP-адресов
 - ✅ **Не осуществляет атаки** на другие системы
-- ✅ **Не перехватывает чужой трафик** 
+- ✅ **Не перехватывает чужой трафик**
 - ✅ **Не нарушает работу других систем**
 - ✅ **Защищает только вашу инфраструктуру**
 
@@ -131,22 +132,27 @@ sudo traffic-guard full -u file:///tmp/my-blocklist.txt
 #### Правовые основания (Российская Федерация)
 
 **Статья 16 Федерального закона от 27.07.2006 N 149-ФЗ "Об информации":**
+
 > Владелец информационной системы вправе устанавливать ограничения доступа к информации
 
 **Статья 209 ГК РФ (право собственности):**
+
 > Собственник вправе по своему усмотрению совершать в отношении принадлежащего ему имущества любые действия
 
 **Федеральный закон от 27.07.2006 N 152-ФЗ "О персональных данных":**
+
 > Оператор обязан принимать необходимые меры по защите персональных данных
 
 #### Может ли быть привлечение к ответственности?
 
 **НЕТ**, если вы:
+
 - Используете утилиту для защиты **собственной инфраструктуры**
 - Блокируете только **входящий трафик на свой сервер**
 - Не используете для атак или нарушения работы других систем
 
 **TrafficGuard НЕ является:**
+
 - ❌ Средством взлома
 - ❌ Инструментом DDoS-атак
 - ❌ ПО для незаконного доступа к информации
@@ -211,6 +217,7 @@ wget -qO- https://raw.githubusercontent.com/dotX12/traffic-guard/master/install.
 ```
 
 Скрипт автоматически:
+
 - Определит архитектуру системы (amd64, 386, arm, arm64)
 - Скачает последний релиз для вашей системы
 - Установит бинарник в `/usr/local/bin`
@@ -219,12 +226,14 @@ wget -qO- https://raw.githubusercontent.com/dotX12/traffic-guard/master/install.
 ### Ручная установка
 
 1. Скачайте нужный бинарник из [последнего релиза](https://github.com/dotX12/traffic-guard/releases/latest):
+
    - `traffic-guard-linux-amd64` - для 64-битных систем
    - `traffic-guard-linux-386` - для 32-битных систем
    - `traffic-guard-linux-arm` - для ARM
    - `traffic-guard-linux-arm64` - для ARM64
 
 2. Установите:
+
 ```bash
 sudo mv traffic-guard-linux-* /usr/local/bin/traffic-guard
 sudo chmod +x /usr/local/bin/traffic-guard
@@ -259,10 +268,11 @@ sudo traffic-guard full \
 
 ### Публичные списки
 
-Готовые списки подсетей сканеров доступны в репозитории: 
+Готовые списки подсетей сканеров доступны в репозитории:
 **[shadow-netlab/traffic-guard-lists](https://github.com/shadow-netlab/traffic-guard-lists/tree/main)**
 
 Доступные списки:
+
 - `public/antiscanner.list` - список от **[zakachkin/AntiScanner](https://github.com/zakachkin/AntiScanner)**
 - `public/government_networks.list` - подсети различных сканеров государственных организаций
 
@@ -290,6 +300,65 @@ sudo traffic-guard full \
 - **`-u, --urls`** (обязательно) - URL для скачивания подсетей. Можно указать несколько раз
 - `-l, --enable-logging` - включить логирование заблокированных подключений
 - `--log-level` - уровень логирования (debug, info, warn, error). По умолчанию: info
+
+## Удаление (uninstall)
+
+Команда `uninstall` пошагово удаляет изменения, внесенные TrafficGuard:
+
+- удаляет правила и цепочку `SCANNERS-BLOCK` из `iptables/ip6tables`
+- удаляет managed-блоки из `/etc/ufw/before.rules` и `/etc/ufw/before6.rules`
+- удаляет наборы `ipset` (`SCANNERS-BLOCK-V4`, `SCANNERS-BLOCK-V6`) и `/etc/ipset.conf`
+- останавливает и отключает сервисы `antiscan-*`, удаляет созданные unit-файлы
+- удаляет конфиги rsyslog/logrotate и скрипт агрегации
+
+Что **не** делает uninstall по умолчанию:
+
+- не удаляет системные пакеты (`iptables`, `ipset`, `netfilter-persistent`)
+- не удаляет логи в `/var/log` (для этого используйте `--remove-logs`)
+- не изменяет состояние UFW (active/inactive), кроме reload при очистке managed-блоков
+- не откатывает таблицы маршрутизации, так как TrafficGuard их не модифицирует
+
+Примеры:
+
+```bash
+# Интерактивное удаление
+sudo traffic-guard uninstall
+
+# Удаление без подтверждения
+sudo traffic-guard uninstall --yes
+
+# Удаление с очисткой логов
+sudo traffic-guard uninstall --yes --remove-logs
+```
+
+### Интеграционный тест full -> uninstall
+
+Для проверки сценария на чистой Linux VM есть отдельный интеграционный скрипт:
+
+```bash
+sudo ./tests/integration/full_uninstall_flow.sh
+```
+
+Что делает сценарий:
+
+- запускает `full` с реальными публичными списками:
+  - `https://raw.githubusercontent.com/shadow-netlab/traffic-guard-lists/refs/heads/main/public/antiscanner.list`
+  - `https://raw.githubusercontent.com/shadow-netlab/traffic-guard-lists/refs/heads/main/public/government_networks.list`
+- проверяет создание `ipset`, `iptables/ip6tables` цепочек и служебных файлов
+- если на хосте доступен `rsyslog`, дополнительно проверяет артефакты логирования
+- запускает `uninstall --yes` и проверяет, что артефакты удалены
+- повторяет цикл и проверяет `uninstall --yes --remove-logs`
+
+Требования:
+
+- Linux
+- root права
+- установленный `systemd`
+- доступ в интернет к `raw.githubusercontent.com`
+- запуск только на изолированной тестовой VM (не production)
+- наличие go, iptables, ip6tables, iptables-save, ip6tables-save, ipset
+
+Проверялось на debian 13.
 
 ## Логирование
 
@@ -320,6 +389,7 @@ v6|2001:db8::1|AS12345|EXAMPLE-NET|12|2026-01-25T17:08:05.987654+03:00
 ```
 
 **Поля:**
+
 - `IP_TYPE` - тип IP (v4/v6)
 - `IP_ADDRESS` - IP адрес сканера
 - `ASN` - номер автономной системы (из whois)
@@ -328,6 +398,7 @@ v6|2001:db8::1|AS12345|EXAMPLE-NET|12|2026-01-25T17:08:05.987654+03:00
 - `LAST_SEEN` - время последней попытки
 
 **Особенности:**
+
 - Whois lookup с кэшированием (не повторяется для одного IP)
 - Таймаут lookup: 3 секунды
 - CSV отсортирован по COUNT (самые активные сверху)
@@ -355,7 +426,7 @@ journalctl -u antiscan-aggregate.service -f
 ### iptables
 
 - **Цепочка**: `SCANNERS-BLOCK`
-- **Правила**: 
+- **Правила**:
   - IPv4: `INPUT -j SCANNERS-BLOCK`
   - IPv6: `INPUT -j SCANNERS-BLOCK`
   - `SCANNERS-BLOCK -m set --match-set SCANNERS-BLOCK-V4 src -j DROP` (IPv4)
@@ -373,6 +444,7 @@ journalctl -u antiscan-aggregate.service -f
 ### Автозагрузка
 
 Правила автоматически сохраняются:
+
 - **Debian/Ubuntu**: `/etc/iptables/rules.v4`, `/etc/iptables/rules.v6`
 - **RedHat/CentOS**: через `service iptables save`
 

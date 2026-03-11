@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"strings"
@@ -14,6 +15,8 @@ import (
 var (
 	urls          []string
 	enableLogging bool
+	confirmYes    bool
+	removeLogs    bool
 	logLevel      string
 	version       = "dev" // Версия будет устанавливаться при сборке через -ldflags
 )
@@ -49,13 +52,24 @@ func main() {
 	fullCmd.Flags().BoolVarP(&enableLogging, "enable-logging", "l", false, "Включить логирование заблокированных подключений")
 	fullCmd.MarkFlagRequired("urls")
 
+	uninstallCmd := &cobra.Command{
+		Use:   "uninstall",
+		Short: "Удалить все изменения, внесённые traffic-guard",
+		Long:  `Удаляет цепочки iptables/ipset, systemd сервисы и конфигурационные файлы, созданные traffic-guard.`,
+		Run:   runUninstall,
+	}
+	uninstallCmd.Flags().BoolVar(&confirmYes, "yes", false, "Подтвердить удаление без интерактивного запроса")
+	uninstallCmd.Flags().BoolVar(&removeLogs, "remove-logs", false, "Удалить логи traffic-guard из /var/log")
+
 	rootCmd.AddCommand(fullCmd)
+	rootCmd.AddCommand(uninstallCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
+
 func runFull(cmd *cobra.Command, args []string) {
 	log := logger.Global()
 	log.Info().Msg("=== Полная установка ===")
@@ -154,4 +168,47 @@ func runFull(cmd *cobra.Command, args []string) {
 	}
 
 	log.Info().Msg("Полная установка успешно завершена")
+}
+
+func runUninstall(cmd *cobra.Command, args []string) {
+	log := logger.Global()
+	log.Info().Msg("=== Удаление traffic-guard ===")
+
+	cmdSvc := service.NewCommandService(log.Logger)
+	installer := service.NewInstallerService(log.Logger)
+	uninstaller := service.NewUninstallerService(log.Logger, cmdSvc)
+
+	if err := installer.CheckRootPrivileges(); err != nil {
+		log.Fatal().Msg("This program must be run as root (use sudo)")
+	}
+
+	if !confirmYes {
+		fmt.Print("Это удалит правила traffic-guard, systemd-сервисы и конфигурацию. Продолжить? [y/N]: ")
+		if !confirmFromStdin() {
+			log.Info().Msg("Удаление отменено пользователем")
+			return
+		}
+	}
+
+	if err := uninstaller.Uninstall(removeLogs); err != nil {
+		log.Fatal().Err(err).Msg("Не удалось выполнить uninstall")
+	}
+
+	if removeLogs {
+		log.Info().Msg("Uninstall завершён, логи удалены")
+		return
+	}
+
+	log.Info().Msg("Uninstall завершён, логи сохранены")
+}
+
+func confirmFromStdin() bool {
+	reader := bufio.NewReader(os.Stdin)
+	response, err := reader.ReadString('\n')
+	if err != nil {
+		return false
+	}
+
+	response = strings.TrimSpace(strings.ToLower(response))
+	return response == "y" || response == "yes"
 }

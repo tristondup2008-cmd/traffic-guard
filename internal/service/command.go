@@ -157,6 +157,24 @@ func (s *CommandService) StartService(serviceName string) error {
 	return s.Run("systemctl", "start", serviceName)
 }
 
+// StopService stops a systemd service
+func (s *CommandService) StopService(serviceName string) error {
+	s.logger.Info().
+		Str("service", serviceName).
+		Msg("Stopping service")
+
+	return s.Run("systemctl", "stop", serviceName)
+}
+
+// DisableService disables a systemd service
+func (s *CommandService) DisableService(serviceName string) error {
+	s.logger.Info().
+		Str("service", serviceName).
+		Msg("Disabling service")
+
+	return s.Run("systemctl", "disable", serviceName)
+}
+
 // RestartService restarts a systemd service
 func (s *CommandService) RestartService(serviceName string) error {
 	s.logger.Info().
