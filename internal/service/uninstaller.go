@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	ufwManagedBlockStart = "# SCANNERS-BLOCK chain - managed by traffic-guard"
+	ufwManagedBlockStart = "# SCANNERS-BLOCK chain - managed by antiscan"
 	ufwManagedBlockEnd   = "# END SCANNERS-BLOCK"
 )
 
