@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	ufwManagedBlockStart = "# SCANNERS-BLOCK chain - managed by antiscan"
+	ufwManagedBlockStart = "# SCANNERS-BLOCK chain - managed by traffic-guard"
 	ufwManagedBlockEnd   = "# END SCANNERS-BLOCK"
 )
 
@@ -142,6 +142,7 @@ func (s *UninstallerService) removeManagedUFWBlock(path string) (bool, error) {
 
 	updated := string(content)
 	original := updated
+	blocksRemoved := 0
 
 	for {
 		start := strings.Index(updated, ufwManagedBlockStart)
@@ -151,7 +152,8 @@ func (s *UninstallerService) removeManagedUFWBlock(path string) (bool, error) {
 
 		endRel := strings.Index(updated[start:], ufwManagedBlockEnd)
 		if endRel == -1 {
-			return false, fmt.Errorf("managed block end marker not found in %s", path)
+			s.logger.Warn().Str("path", path).Msg("Managed block start found but no end marker, skipping")
+			break
 		}
 
 		end := start + endRel + len(ufwManagedBlockEnd)
@@ -160,6 +162,7 @@ func (s *UninstallerService) removeManagedUFWBlock(path string) (bool, error) {
 		}
 
 		updated = updated[:start] + updated[end:]
+		blocksRemoved++
 	}
 
 	if updated == original {
@@ -175,7 +178,7 @@ func (s *UninstallerService) removeManagedUFWBlock(path string) (bool, error) {
 		return false, fmt.Errorf("failed to replace %s: %w", path, err)
 	}
 
-	s.logger.Info().Str("path", path).Msg("Removed TrafficGuard managed UFW block")
+	s.logger.Info().Str("path", path).Int("blocks", blocksRemoved).Msg("Removed TrafficGuard managed UFW blocks")
 	return true, nil
 }
 
@@ -245,13 +248,22 @@ func (s *UninstallerService) reloadRsyslog() error {
 		return nil
 	}
 
+	// Check if rsyslog service exists and is active
+	if err := s.cmdSvc.Run("systemctl", "is-active", "rsyslog"); err != nil {
+		s.logger.Debug().Msg("rsyslog is not active, skipping reload")
+		return nil
+	}
+
 	return s.cmdSvc.RestartService("rsyslog")
 }
 
 func (s *UninstallerService) persistFirewallState() error {
 	if s.cmdSvc.CommandExists("ufw") {
+		s.logger.Debug().Msg("UFW detected, skipping manual iptables persistence")
 		return nil
 	}
+
+	s.logger.Info().Msg("Persisting firewall state to /etc/iptables/")
 
 	if err := os.MkdirAll("/etc/iptables", 0755); err != nil {
 		return err

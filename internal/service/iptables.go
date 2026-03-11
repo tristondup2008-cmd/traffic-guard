@@ -291,8 +291,8 @@ func (s *IptablesService) saveWithUFW() error {
 	}
 
 	// Проверяем есть ли уже наша цепочка
-	markerV4 := "# SCANNERS-BLOCK chain - managed by antiscan"
-	markerV6 := "# SCANNERS-BLOCK chain - managed by antiscan"
+	markerV4 := "# SCANNERS-BLOCK chain - managed by traffic-guard"
+	markerV6 := "# SCANNERS-BLOCK chain - managed by traffic-guard"
 
 	if !strings.Contains(string(contentV4), markerV4) {
 		// Добавляем наши правила в before.rules (внутри существующей секции *filter)
@@ -303,7 +303,7 @@ func (s *IptablesService) saveWithUFW() error {
 		}
 
 		rulesV4 := fmt.Sprintf(`
-# SCANNERS-BLOCK chain - managed by antiscan
+# SCANNERS-BLOCK chain - managed by traffic-guard
 # DO NOT EDIT THIS SECTION MANUALLY
 :%s - [0:0]
 -A ufw-before-input -j %s
@@ -334,7 +334,7 @@ func (s *IptablesService) saveWithUFW() error {
 		}
 
 		rulesV6 := fmt.Sprintf(`
-# SCANNERS-BLOCK chain - managed by antiscan
+# SCANNERS-BLOCK chain - managed by traffic-guard
 :%s - [0:0]
 -A ufw6-before-input -j %s
 %s-A %s -m set --match-set %s src -j DROP

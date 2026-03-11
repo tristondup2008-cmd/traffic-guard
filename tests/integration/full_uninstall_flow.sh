@@ -6,7 +6,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BIN_PATH="${TRAFFIC_GUARD_BIN:-${ROOT_DIR}/bin/traffic-guard}"
 ANTISCANNER_URL="https://raw.githubusercontent.com/shadow-netlab/traffic-guard-lists/refs/heads/main/public/antiscanner.list"
 GOV_NETWORKS_URL="https://raw.githubusercontent.com/shadow-netlab/traffic-guard-lists/refs/heads/main/public/government_networks.list"
-MANAGED_MARKER="# SCANNERS-BLOCK chain - managed by antiscan"
+MANAGED_MARKER="# SCANNERS-BLOCK chain - managed by traffic-guard"
 
 log() {
   printf '[integration] %s\n' "$*"

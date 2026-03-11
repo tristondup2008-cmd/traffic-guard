@@ -265,7 +265,7 @@ const (
 const (
 	// UFWBeforeRulesHeader is the header for SCANNERS-BLOCK in UFW before.rules
 	UFWBeforeRulesHeader = `
-# SCANNERS-BLOCK chain - managed by antiscan
+# SCANNERS-BLOCK chain - managed by traffic-guard
 :SCANNERS-BLOCK - [0:0]
 -A ufw-before-input -j SCANNERS-BLOCK
 `
@@ -276,7 +276,7 @@ const (
 
 	// UFW6BeforeRulesHeader is the header for SCANNERS-BLOCK in UFW before6.rules
 	UFW6BeforeRulesHeader = `
-# SCANNERS-BLOCK chain - managed by antiscan
+# SCANNERS-BLOCK chain - managed by traffic-guard
 :SCANNERS-BLOCK - [0:0]
 -A ufw6-before-input -j SCANNERS-BLOCK
 `
