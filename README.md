@@ -356,6 +356,9 @@ sudo ./tests/integration/full_uninstall_flow.sh
 - установленный `systemd`
 - доступ в интернет к `raw.githubusercontent.com`
 - запуск только на изолированной тестовой VM (не production)
+- наличие go, iptables, ip6tables, iptables-save, ip6tables-save, ipset
+
+Проверялось на debian 13.
 
 ## Логирование
 
