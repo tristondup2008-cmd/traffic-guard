@@ -82,7 +82,19 @@ func (s *IptablesService) setupIPv4Chain(linkToInput bool) error {
 		}
 	}
 
-	// Add logging rule if enabled
+	// Add ESTABLISHED,RELATED rule first (позиция 1) - пропускаем ответы на исходящие соединения
+	establishedRule := NewRuleBuilder().
+		MatchConntrack("ESTABLISHED", "RELATED").
+		Jump(TargetReturn).
+		Build()
+	if !s.iptablesCmd.RuleExists(IPv4, TableFilter, chainName, establishedRule) {
+		s.logger.Info().Msg("Добавление правила для установленных соединений IPv4")
+		if err := s.iptablesCmd.InsertRule(IPv4, TableFilter, chainName, 1, establishedRule); err != nil {
+			return fmt.Errorf("failed to add ESTABLISHED rule: %w", err)
+		}
+	}
+
+	// Add logging rule if enabled (позиция 2, после ESTABLISHED)
 	if s.enableLogging {
 		logRule := NewRuleBuilder().
 			MatchSet(ipsetV4Name, "src").
@@ -93,13 +105,13 @@ func (s *IptablesService) setupIPv4Chain(linkToInput bool) error {
 			Build()
 		if !s.iptablesCmd.RuleExists(IPv4, TableFilter, chainName, logRule) {
 			s.logger.Info().Msg("Добавление правила логирования IPv4")
-			if err := s.iptablesCmd.InsertRule(IPv4, TableFilter, chainName, 1, logRule); err != nil {
+			if err := s.iptablesCmd.InsertRule(IPv4, TableFilter, chainName, 2, logRule); err != nil {
 				return fmt.Errorf("failed to add LOG rule: %w", err)
 			}
 		}
 	}
 
-	// Add DROP rule
+	// Add DROP rule (в конец, после ESTABLISHED и LOG)
 	dropRule := NewRuleBuilder().MatchSet(ipsetV4Name, "src").Jump(TargetDrop).Build()
 	if !s.iptablesCmd.RuleExists(IPv4, TableFilter, chainName, dropRule) {
 		s.logger.Info().Msg("Добавление правила блокировки IPv4")
@@ -138,7 +150,19 @@ func (s *IptablesService) setupIPv6Chain(linkToInput bool) error {
 		}
 	}
 
-	// Add logging rule if enabled
+	// Add ESTABLISHED,RELATED rule first (позиция 1) - пропускаем ответы на исходящие соединения
+	establishedRule := NewRuleBuilder().
+		MatchConntrack("ESTABLISHED", "RELATED").
+		Jump(TargetReturn).
+		Build()
+	if !s.iptablesCmd.RuleExists(IPv6, TableFilter, chainName, establishedRule) {
+		s.logger.Info().Msg("Добавление правила для установленных соединений IPv6")
+		if err := s.iptablesCmd.InsertRule(IPv6, TableFilter, chainName, 1, establishedRule); err != nil {
+			return fmt.Errorf("failed to add ESTABLISHED rule: %w", err)
+		}
+	}
+
+	// Add logging rule if enabled (позиция 2, после ESTABLISHED)
 	if s.enableLogging {
 		logRule := NewRuleBuilder().
 			MatchSet(ipsetV6Name, "src").
@@ -149,13 +173,13 @@ func (s *IptablesService) setupIPv6Chain(linkToInput bool) error {
 			Build()
 		if !s.iptablesCmd.RuleExists(IPv6, TableFilter, chainName, logRule) {
 			s.logger.Info().Msg("Добавление правила логирования IPv6")
-			if err := s.iptablesCmd.InsertRule(IPv6, TableFilter, chainName, 1, logRule); err != nil {
+			if err := s.iptablesCmd.InsertRule(IPv6, TableFilter, chainName, 2, logRule); err != nil {
 				return fmt.Errorf("failed to add LOG rule: %w", err)
 			}
 		}
 	}
 
-	// Add DROP rule
+	// Add DROP rule (в конец, после ESTABLISHED и LOG)
 	dropRule := NewRuleBuilder().MatchSet(ipsetV6Name, "src").Jump(TargetDrop).Build()
 	if !s.iptablesCmd.RuleExists(IPv6, TableFilter, chainName, dropRule) {
 		s.logger.Info().Msg("Добавление правила блокировки IPv6")
@@ -307,10 +331,11 @@ func (s *IptablesService) saveWithUFW() error {
 # DO NOT EDIT THIS SECTION MANUALLY
 :%s - [0:0]
 -A ufw-before-input -j %s
+-A %s -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
 %s-A %s -m set --match-set %s src -j DROP
 # END SCANNERS-BLOCK
 
-`, chainName, chainName, logRuleV4, chainName, ipsetV4Name)
+`, chainName, chainName, chainName, logRuleV4, chainName, ipsetV4Name)
 
 		// Вставляем перед последним COMMIT в конце *filter секции
 		lastCommit := strings.LastIndex(string(contentV4), "COMMIT\n")
@@ -337,10 +362,11 @@ func (s *IptablesService) saveWithUFW() error {
 # SCANNERS-BLOCK chain - managed by antiscan
 :%s - [0:0]
 -A ufw6-before-input -j %s
+-A %s -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
 %s-A %s -m set --match-set %s src -j DROP
 # END SCANNERS-BLOCK
 
-`, chainName, chainName, logRuleV6, chainName, ipsetV6Name)
+`, chainName, chainName, chainName, logRuleV6, chainName, ipsetV6Name)
 
 		lastCommit := strings.LastIndex(string(contentV6), "COMMIT\n")
 		if lastCommit == -1 {
@@ -351,7 +377,7 @@ func (s *IptablesService) saveWithUFW() error {
 				s.logger.Warn().Err(err).Msg("Не удалось записать UFW правила для IPv6")
 			} else {
 				if err := os.Rename(beforeRulesV6+".new", beforeRulesV6); err != nil {
-					s.logger.Warn().Err(err).Msg("Не удалось обновить UFW правила для IPv6")
+					s.logger.Warn().Err(err).Msg("Не удалось обновить UFW before6.rules")
 				} else {
 					s.logger.Info().Msg("Обновлён UFW before6.rules для IPv6")
 				}
