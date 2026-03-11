@@ -42,12 +42,12 @@ func (s *IptablesService) SetupChain() error {
 	}
 
 	// Setup IPv4
-	if err := s.setupIPv4Chain(linkToInput); err != nil {
+	if err := s.setupVersionChain(IPv4, ipsetV4Name, linkToInput); err != nil {
 		return fmt.Errorf("failed to setup IPv4 chain: %w", err)
 	}
 
 	// Setup IPv6
-	if err := s.setupIPv6Chain(linkToInput); err != nil {
+	if err := s.setupVersionChain(IPv6, ipsetV6Name, linkToInput); err != nil {
 		return fmt.Errorf("failed to setup IPv6 chain: %w", err)
 	}
 
@@ -55,135 +55,72 @@ func (s *IptablesService) SetupChain() error {
 	return nil
 }
 
-// setupIPv4Chain configures IPv4 chain
-func (s *IptablesService) setupIPv4Chain(linkToInput bool) error {
-	s.logger.Debug().Msg("Настройка IPv4 цепочки")
+// setupVersionChain configures the SCANNERS-BLOCK chain for the given IP version
+func (s *IptablesService) setupVersionChain(version IPVersion, ipsetName string, linkToInput bool) error {
+	s.logger.Debug().Str("version", string(version)).Msg("Настройка цепочки")
 
 	// Check if chain exists
-	if s.iptablesCmd.ChainExists(IPv4, TableFilter, chainName) {
-		s.logger.Info().Str("chain", chainName).Msg("Очистка существующей цепочки iptables")
-		if err := s.iptablesCmd.FlushChain(IPv4, TableFilter, chainName); err != nil {
+	if s.iptablesCmd.ChainExists(version, TableFilter, chainName) {
+		s.logger.Info().Str("chain", chainName).Str("version", string(version)).Msg("Очистка существующей цепочки")
+		if err := s.iptablesCmd.FlushChain(version, TableFilter, chainName); err != nil {
 			return fmt.Errorf("failed to flush chain: %w", err)
 		}
 	} else {
-		s.logger.Info().Str("chain", chainName).Msg("Создание цепочки iptables")
-		if err := s.iptablesCmd.CreateChain(IPv4, TableFilter, chainName); err != nil {
+		s.logger.Info().Str("chain", chainName).Str("version", string(version)).Msg("Создание цепочки")
+		if err := s.iptablesCmd.CreateChain(version, TableFilter, chainName); err != nil {
 			return fmt.Errorf("failed to create chain: %w", err)
 		}
 	}
 
 	// Link chain to INPUT (only if not using UFW)
 	if linkToInput {
-		if !s.iptablesCmd.RuleExists(IPv4, TableFilter, string(ChainInput), []string{"-j", chainName}) {
-			s.logger.Info().Msg("Привязка цепочки к INPUT")
-			if err := s.iptablesCmd.LinkChainToInput(IPv4, chainName, 1); err != nil {
+		if !s.iptablesCmd.RuleExists(version, TableFilter, string(ChainInput), []string{"-j", chainName}) {
+			s.logger.Info().Str("version", string(version)).Msg("Привязка цепочки к INPUT")
+			if err := s.iptablesCmd.LinkChainToInput(version, chainName, 1); err != nil {
 				return fmt.Errorf("failed to link chain to INPUT: %w", err)
 			}
 		}
 	}
 
-	// Add ESTABLISHED,RELATED rule first (позиция 1) - пропускаем ответы на исходящие соединения
+	// Add ESTABLISHED,RELATED rule at position 1 to allow responses to outgoing connections
 	establishedRule := NewRuleBuilder().
 		MatchConntrack("ESTABLISHED", "RELATED").
 		Jump(TargetReturn).
 		Build()
-	if !s.iptablesCmd.RuleExists(IPv4, TableFilter, chainName, establishedRule) {
-		s.logger.Info().Msg("Добавление правила для установленных соединений IPv4")
-		if err := s.iptablesCmd.InsertRule(IPv4, TableFilter, chainName, 1, establishedRule); err != nil {
+	if !s.iptablesCmd.RuleExists(version, TableFilter, chainName, establishedRule) {
+		s.logger.Info().Str("version", string(version)).Msg("Добавление правила для установленных соединений")
+		if err := s.iptablesCmd.InsertRule(version, TableFilter, chainName, 1, establishedRule); err != nil {
 			return fmt.Errorf("failed to add ESTABLISHED rule: %w", err)
 		}
 	}
 
-	// Add logging rule if enabled (позиция 2, после ESTABLISHED)
+	// Add logging rule at position 2 (after ESTABLISHED) if enabled
 	if s.enableLogging {
+		versionLabel := "v4"
+		if version == IPv6 {
+			versionLabel = "v6"
+		}
+		logPrefix := fmt.Sprintf("ANTISCAN-%s: ", versionLabel)
 		logRule := NewRuleBuilder().
-			MatchSet(ipsetV4Name, "src").
+			MatchSet(ipsetName, "src").
 			MatchLimit("10/min", "5").
 			Jump(TargetLog).
-			LogPrefix("ANTISCAN-v4: ").
+			LogPrefix(logPrefix).
 			LogLevel("4").
 			Build()
-		if !s.iptablesCmd.RuleExists(IPv4, TableFilter, chainName, logRule) {
-			s.logger.Info().Msg("Добавление правила логирования IPv4")
-			if err := s.iptablesCmd.InsertRule(IPv4, TableFilter, chainName, 2, logRule); err != nil {
+		if !s.iptablesCmd.RuleExists(version, TableFilter, chainName, logRule) {
+			s.logger.Info().Str("version", string(version)).Msg("Добавление правила логирования")
+			if err := s.iptablesCmd.InsertRule(version, TableFilter, chainName, 2, logRule); err != nil {
 				return fmt.Errorf("failed to add LOG rule: %w", err)
 			}
 		}
 	}
 
-	// Add DROP rule (в конец, после ESTABLISHED и LOG)
-	dropRule := NewRuleBuilder().MatchSet(ipsetV4Name, "src").Jump(TargetDrop).Build()
-	if !s.iptablesCmd.RuleExists(IPv4, TableFilter, chainName, dropRule) {
-		s.logger.Info().Msg("Добавление правила блокировки IPv4")
-		if err := s.iptablesCmd.AppendRule(IPv4, TableFilter, chainName, dropRule); err != nil {
-			return fmt.Errorf("failed to add DROP rule: %w", err)
-		}
-	}
-
-	return nil
-}
-
-// setupIPv6Chain configures IPv6 chain
-func (s *IptablesService) setupIPv6Chain(linkToInput bool) error {
-	s.logger.Debug().Msg("Настройка IPv6 цепочки")
-
-	// Check if chain exists
-	if s.iptablesCmd.ChainExists(IPv6, TableFilter, chainName) {
-		s.logger.Info().Str("chain", chainName).Msg("Очистка существующей цепочки ip6tables")
-		if err := s.iptablesCmd.FlushChain(IPv6, TableFilter, chainName); err != nil {
-			return fmt.Errorf("failed to flush chain: %w", err)
-		}
-	} else {
-		s.logger.Info().Str("chain", chainName).Msg("Создание цепочки ip6tables")
-		if err := s.iptablesCmd.CreateChain(IPv6, TableFilter, chainName); err != nil {
-			return fmt.Errorf("failed to create chain: %w", err)
-		}
-	}
-
-	// Link chain to INPUT (only if not using UFW)
-	if linkToInput {
-		if !s.iptablesCmd.RuleExists(IPv6, TableFilter, string(ChainInput), []string{"-j", chainName}) {
-			s.logger.Info().Msg("Привязка цепочки к INPUT")
-			if err := s.iptablesCmd.LinkChainToInput(IPv6, chainName, 1); err != nil {
-				return fmt.Errorf("failed to link chain to INPUT: %w", err)
-			}
-		}
-	}
-
-	// Add ESTABLISHED,RELATED rule first (позиция 1) - пропускаем ответы на исходящие соединения
-	establishedRule := NewRuleBuilder().
-		MatchConntrack("ESTABLISHED", "RELATED").
-		Jump(TargetReturn).
-		Build()
-	if !s.iptablesCmd.RuleExists(IPv6, TableFilter, chainName, establishedRule) {
-		s.logger.Info().Msg("Добавление правила для установленных соединений IPv6")
-		if err := s.iptablesCmd.InsertRule(IPv6, TableFilter, chainName, 1, establishedRule); err != nil {
-			return fmt.Errorf("failed to add ESTABLISHED rule: %w", err)
-		}
-	}
-
-	// Add logging rule if enabled (позиция 2, после ESTABLISHED)
-	if s.enableLogging {
-		logRule := NewRuleBuilder().
-			MatchSet(ipsetV6Name, "src").
-			MatchLimit("10/min", "5").
-			Jump(TargetLog).
-			LogPrefix("ANTISCAN-v6: ").
-			LogLevel("4").
-			Build()
-		if !s.iptablesCmd.RuleExists(IPv6, TableFilter, chainName, logRule) {
-			s.logger.Info().Msg("Добавление правила логирования IPv6")
-			if err := s.iptablesCmd.InsertRule(IPv6, TableFilter, chainName, 2, logRule); err != nil {
-				return fmt.Errorf("failed to add LOG rule: %w", err)
-			}
-		}
-	}
-
-	// Add DROP rule (в конец, после ESTABLISHED и LOG)
-	dropRule := NewRuleBuilder().MatchSet(ipsetV6Name, "src").Jump(TargetDrop).Build()
-	if !s.iptablesCmd.RuleExists(IPv6, TableFilter, chainName, dropRule) {
-		s.logger.Info().Msg("Добавление правила блокировки IPv6")
-		if err := s.iptablesCmd.AppendRule(IPv6, TableFilter, chainName, dropRule); err != nil {
+	// Append DROP rule (after ESTABLISHED and LOG rules)
+	dropRule := NewRuleBuilder().MatchSet(ipsetName, "src").Jump(TargetDrop).Build()
+	if !s.iptablesCmd.RuleExists(version, TableFilter, chainName, dropRule) {
+		s.logger.Info().Str("version", string(version)).Msg("Добавление правила блокировки")
+		if err := s.iptablesCmd.AppendRule(version, TableFilter, chainName, dropRule); err != nil {
 			return fmt.Errorf("failed to add DROP rule: %w", err)
 		}
 	}
@@ -360,6 +297,7 @@ func (s *IptablesService) saveWithUFW() error {
 
 		rulesV6 := fmt.Sprintf(`
 # SCANNERS-BLOCK chain - managed by antiscan
+# DO NOT EDIT THIS SECTION MANUALLY
 :%s - [0:0]
 -A ufw6-before-input -j %s
 -A %s -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
