@@ -9,10 +9,10 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Константы
-REPO="dotX12/traffic-guard"
+REPO="tristondup2008-cmd/traffic-guard"
 BINARY_NAME="traffic-guard"
 INSTALL_DIR="/usr/local/bin"
-LATEST_RELEASE_URL="https://github.com/${REPO}/releases/latest/download"
+LATEST_RELEASE_URL="https://github.com/${REPO}/releases/tag/latest/download"
 DEV_MODE=false
 
 # Функция для вывода сообщений
